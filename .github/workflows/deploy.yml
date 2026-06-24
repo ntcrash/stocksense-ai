@@ -1,0 +1,32 @@
+name: StockSense AI — Auto Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  test-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run dry-run analysis
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m backend.analyzer --dry-run
+        continue-on-error: true
+      - name: Upload signal artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: signals-${{ github.run_number }}
+          path: data/latest_signals.json
+          if-no-files-found: ignore

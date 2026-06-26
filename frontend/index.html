@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StockSense AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: #080c14; color: #e2e8f0; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+    /* Sidebar */
+    .sidebar { background: #0b1120; border-right: 1px solid #1e293b; }
+    .nav-item { transition: all 0.2s; border-left: 3px solid transparent; }
+    .nav-item:hover { background: #1e293b40; border-left-color: #334155; }
+    .nav-item.active { background: #0f3460; border-left-color: #3b82f6; color: #60a5fa; }
+    .nav-item.active i { color: #60a5fa; }
+
+    /* Cards */
+    .card { background: #0d1726; border: 1px solid #1e293b; border-radius: 12px; }
+    .card:hover { border-color: #334155; transition: border-color 0.2s; }
+    .card-glow-green { box-shadow: 0 0 20px #10b98115; }
+    .card-glow-red { box-shadow: 0 0 20px #ef444415; }
+    .card-glow-blue { box-shadow: 0 0 20px #3b82f615; }
+
+    /* Signal badges */
+    .badge-buy { background: #052e1680; border: 1px solid #16a34a; color: #4ade80; }
+    .badge-sell { background: #450a0a80; border: 1px solid #dc2626; color: #f87171; }
+    .badge-hold { background: #1c150080; border: 1px solid #ca8a04; color: #facc15; }
+
+    /* Confidence bar */
+    .conf-bar { height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden; }
+    .conf-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+    .conf-high { background: linear-gradient(90deg, #059669, #10b981); }
+    .conf-med { background: linear-gradient(90deg, #b45309, #f59e0b); }
+    .conf-low { background: linear-gradient(90deg, #991b1b, #ef4444); }
+
+    /* P&L coloring */
+    .pl-pos { color: #4ade80; }
+    .pl-neg { color: #f87171; }
+
+    /* Table */
+    .data-table th { background: #0b1120; color: #64748b; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 10px 14px; }
+    .data-table td { padding: 12px 14px; border-bottom: 1px solid #1e293b10; }
+    .data-table tr:hover td { background: #1e293b20; }
+
+    /* Buttons */
+    .btn-primary { background: linear-gradient(135deg, #1d4ed8, #2563eb); transition: all 0.2s; }
+    .btn-primary:hover { background: linear-gradient(135deg, #2563eb, #3b82f6); transform: translateY(-1px); box-shadow: 0 4px 15px #3b82f640; }
+    .btn-danger { background: linear-gradient(135deg, #991b1b, #dc2626); }
+    .btn-danger:hover { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+    .btn-success { background: linear-gradient(135deg, #065f46, #059669); }
+    .btn-success:hover { background: linear-gradient(135deg, #047857, #10b981); }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; min-width: 280px;
+      background: #0d1726; border: 1px solid #334155; border-radius: 10px;
+      padding: 14px 18px; display: flex; align-items: center; gap: 10px;
+      transform: translateX(120%); transition: transform 0.3s ease; box-shadow: 0 8px 30px #00000060; }
+    .toast.show { transform: translateX(0); }
+
+    /* Pulse dot */
+    .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80;
+      animation: pulse 2s infinite; display: inline-block; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 #4ade8060; }
+      70% { box-shadow: 0 0 0 8px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+
+    /* Spinner */
+    .spinner { width: 16px; height: 16px; border: 2px solid #334155; border-top-color: #3b82f6;
+      border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Log viewer */
+    .log-line { font-size: 0.7rem; padding: 2px 0; border-bottom: 1px solid #1e293b20; }
+    .log-info { color: #60a5fa; }
+    .log-error { color: #f87171; }
+    .log-warn { color: #facc15; }
+
+    /* Top bar */
+    .topbar { background: #0b112080; backdrop-filter: blur(10px);
+      border-bottom: 1px solid #1e293b; position: sticky; top: 0; z-index: 100; }
+
+    /* Stat card value */
+    .stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+
+    /* Chart container */
+    .chart-wrap { position: relative; height: 200px; }
+
+    /* Mobile overlay */
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: #00000080; z-index: 49; }
+    @media (max-width: 768px) {
+      .sidebar { position: fixed; left: -260px; top: 0; height: 100vh; z-index: 50; width: 220px; transition: left 0.3s; }
+      .sidebar.open { left: 0; }
+      .sidebar-overlay.show { display: block; }
+    }
+
+    /* Skeleton loader */
+    .skeleton { background: linear-gradient(90deg, #1e293b 25%, #263548 50%, #1e293b 75%);
+      background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  </style>
+</head>
+<body class="min-h-screen flex">
+
+<!-- Sidebar Overlay (mobile) -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- ═══ SIDEBAR ═══ -->
+<aside class="sidebar w-56 min-h-screen flex-shrink-0 flex flex-col" id="sidebar">
+  <!-- Logo -->
+  <div class="px-5 py-5 border-b border-slate-800">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+        <i class="fa-solid fa-chart-line text-white text-sm"></i>
+      </div>
+      <div>
+        <div class="font-semibold text-sm text-white">StockSense</div>
+        <div class="text-xs text-slate-500">AI Trading</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="px-5 py-3 border-b border-slate-800">
+    <div class="flex items-center gap-2 text-xs text-slate-400">
+      <span class="pulse-dot"></span>
+      <span id="statusText">Paper Trading</span>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="flex-1 py-3 space-y-0.5 px-2">
+    <button onclick="switchTab('overview')" class="nav-item active w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" id="nav-overview">
+      <i class="fa-solid fa-gauge-high w-4 text-slate-400"></i> Overview
+    </button>
+    <button onclick="switchTab('portfolio')" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" id="nav-portfolio">
+      <i class="fa-solid fa-briefcase w-4 text-slate-400"></i> Portfolio
+    </button>
+    <button onclick="switchTab('signals')" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" id="nav-signals">
+      <i class="fa-solid fa-bolt w-4 text-slate-400"></i> Signals
+      <span id="signalBadge" class="ml-auto text-xs bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded-full hidden"></span>
+    </button>
+    <button onclick="switchTab('watchlist')" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" id="nav-watchlist">
+      <i class="fa-solid fa-eye w-4 text-slate-400"></i> Watchlist
+    </button>
+    <button onclick="switchTab('logs')" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left" id="nav-logs">
+      <i class="fa-solid fa-terminal w-4 text-slate-400"></i> Logs
+    </button>
+  </nav>
+
+  <!-- Bottom -->
+  <div class="px-4 py-4 border-t border-slate-800">
+    <div class="text-xs text-slate-600 mono">v1.0.1</div>
+    <div id="lastRefreshSide" class="text-xs text-slate-600 mt-0.5">—</div>
+  </div>
+</aside>
+
+<!-- ═══ MAIN ═══ -->
+<div class="flex-1 flex flex-col overflow-hidden">
+
+  <!-- Top Bar -->
+  <header class="topbar px-4 py-3 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <button onclick="toggleSidebar()" class="md:hidden text-slate-400 hover:text-white">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <div>
+        <h1 id="pageTitle" class="text-sm font-semibold text-white">Overview</h1>
+        <p class="text-xs text-slate-500" id="pageSubtitle">Portfolio + AI Signals</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="text-xs text-slate-500 hidden sm:block">
+        Auto-refresh in <span id="countdown" class="text-blue-400 font-medium mono">60</span>s
+      </div>
+      <button onclick="refreshAll()" id="refreshBtn"
+        class="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-all">
+        <i class="fa-solid fa-rotate-right"></i> Refresh
+      </button>
+      <button onclick="triggerAnalysis(false)" id="analyzeBtn"
+        class="btn-primary flex items-center gap-1.5 text-xs text-white px-3 py-1.5 rounded-lg font-medium">
+        <i class="fa-solid fa-brain"></i> <span class="hidden sm:inline">Run</span> Analysis
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══ TAB CONTENT ═══ -->
+  <main class="flex-1 overflow-y-auto p-4 md:p-5 space-y-5">
+
+    <!-- ── OVERVIEW TAB ── -->
+    <div id="tab-overview">
+
+      <!-- Stat Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <div class="card card-glow-blue p-4">
+          <div class="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5">
+            <i class="fa-solid fa-wallet text-blue-500"></i> Portfolio Value
+          </div>
+          <div class="stat-value text-white" id="statPortfolioVal"><span class="skeleton h-7 w-28 block">&nbsp;</span></div>
+          <div class="text-xs text-slate-500 mt-1" id="statEquity">—</div>
+        </div>
+        <div class="card p-4" id="cardDayPL">
+          <div class="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5">
+            <i class="fa-solid fa-arrow-trend-up"></i> Day P&amp;L
+          </div>
+          <div class="stat-value" id="statDayPL"><span class="skeleton h-7 w-24 block">&nbsp;</span></div>
+          <div class="text-xs text-slate-500 mt-1" id="statDayPLPct">—</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5">
+            <i class="fa-solid fa-coins text-amber-500"></i> Buying Power
+          </div>
+          <div class="stat-value text-amber-400" id="statBuyingPower"><span class="skeleton h-7 w-24 block">&nbsp;</span></div>
+          <div class="text-xs text-slate-500 mt-1">Available cash</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5">
+            <i class="fa-solid fa-layer-group text-purple-500"></i> Open Positions
+          </div>
+          <div class="stat-value text-purple-400" id="statPositions"><span class="skeleton h-7 w-16 block">&nbsp;</span></div>
+          <div class="text-xs text-slate-500 mt-1" id="statWatchCount">—</div>
+        </div>
+      </div>
+
+      <!-- Chart + Signal Summary Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
+
+        <!-- Signal Distribution Chart -->
+        <div class="card p-5">
+          <div class="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-chart-pie text-blue-400"></i> Signal Breakdown
+          </div>
+          <div class="chart-wrap">
+            <canvas id="signalChart"></canvas>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-4 text-center">
+            <div><div class="text-xs text-slate-500">BUY</div><div class="font-bold text-green-400" id="buyCount">—</div></div>
+            <div><div class="text-xs text-slate-500">HOLD</div><div class="font-bold text-amber-400" id="holdCount">—</div></div>
+            <div><div class="text-xs text-slate-500">SELL</div><div class="font-bold text-red-400" id="sellCount">—</div></div>
+          </div>
+        </div>
+
+        <!-- Top Signals Quick View -->
+        <div class="card p-5 lg:col-span-2">
+          <div class="text-sm font-medium text-slate-300 mb-4 flex items-center justify-between">
+            <span><i class="fa-solid fa-bolt text-amber-400 mr-2"></i>Latest Signals</span>
+            <span class="text-xs text-slate-500" id="signalsTimestamp">—</span>
+          </div>
+          <div id="signalPreviewList" class="space-y-2">
+            <div class="skeleton h-10 rounded-lg">&nbsp;</div>
+            <div class="skeleton h-10 rounded-lg">&nbsp;</div>
+            <div class="skeleton h-10 rounded-lg">&nbsp;</div>
+          </div>
+          <button onclick="switchTab('signals')" class="mt-3 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+            View all signals <i class="fa-solid fa-arrow-right text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Positions Quick View -->
+      <div class="card p-5">
+        <div class="text-sm font-medium text-slate-300 mb-4 flex items-center justify-between">
+          <span><i class="fa-solid fa-briefcase text-purple-400 mr-2"></i>Open Positions</span>
+          <button onclick="switchTab('portfolio')" class="text-xs text-blue-400 hover:text-blue-300">Full view →</button>
+        </div>
+        <div id="overviewPositionsTable">
+          <div class="skeleton h-8 rounded mb-2">&nbsp;</div>
+          <div class="skeleton h-8 rounded mb-2">&nbsp;</div>
+          <div class="skeleton h-8 rounded">&nbsp;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PORTFOLIO TAB ── -->
+    <div id="tab-portfolio" class="hidden">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+        <div class="card p-4">
+          <div class="text-xs text-slate-500 mb-1">Portfolio Value</div>
+          <div class="text-2xl font-bold text-white" id="pPortfolioVal">—</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-xs text-slate-500 mb-1">Day P&amp;L</div>
+          <div class="text-2xl font-bold" id="pDayPL">—</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-xs text-slate-500 mb-1">Buying Power</div>
+          <div class="text-2xl font-bold text-amber-400" id="pBuyingPower">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+          <span class="text-sm font-medium text-slate-300">Positions</span>
+          <span id="positionCount" class="text-xs text-slate-500"></span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="data-table w-full">
+            <thead>
+              <tr>
+                <th class="text-left">Symbol</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Avg Cost</th>
+                <th class="text-right">Current</th>
+                <th class="text-right">P&amp;L</th>
+                <th class="text-right">P&amp;L %</th>
+                <th class="text-right">Value</th>
+              </tr>
+            </thead>
+            <tbody id="positionsBody">
+              <tr><td colspan="7" class="text-center text-slate-500 py-8">Loading positions…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="noPositions" class="hidden text-center py-10 text-slate-500">
+          <i class="fa-solid fa-inbox text-3xl mb-2 block text-slate-700"></i>
+          No open positions in paper account
+        </div>
+      </div>
+
+      <div class="card mt-4 p-5">
+        <div class="text-sm font-medium text-slate-300 mb-3">
+          <i class="fa-solid fa-chart-bar text-blue-400 mr-2"></i>P&amp;L by Position
+        </div>
+        <div class="chart-wrap">
+          <canvas id="plChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SIGNALS TAB ── -->
+    <div id="tab-signals" class="hidden">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <p class="text-sm text-slate-400" id="signalsMeta">—</p>
+        </div>
+        <div class="flex gap-2">
+          <select id="signalFilter" onchange="renderSignals()"
+            class="text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded-lg px-3 py-1.5 outline-none">
+            <option value="ALL">All Signals</option>
+            <option value="BUY">BUY only</option>
+            <option value="SELL">SELL only</option>
+            <option value="HOLD">HOLD only</option>
+          </select>
+        </div>
+      </div>
+      <div id="signalsGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div class="skeleton h-48 rounded-xl">&nbsp;</div>
+        <div class="skeleton h-48 rounded-xl">&nbsp;</div>
+        <div class="skeleton h-48 rounded-xl">&nbsp;</div>
+      </div>
+    </div>
+
+    <!-- ── WATCHLIST TAB ── -->
+    <div id="tab-watchlist" class="hidden">
+      <div class="card p-5 mb-4">
+        <div class="text-sm font-medium text-slate-300 mb-3">Analyze a Ticker</div>
+        <div class="flex gap-2">
+          <input id="tickerInput" type="text" placeholder="e.g. AAPL" maxlength="5"
+            class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500 uppercase"
+            onkeydown="if(event.key==='Enter') analyzeTicker()" />
+          <button onclick="analyzeTicker()"
+            class="btn-primary text-white text-sm px-4 py-2 rounded-lg font-medium flex items-center gap-2">
+            <i class="fa-solid fa-brain"></i> Analyze
+          </button>
+        </div>
+        <div id="tickerResult" class="mt-4 hidden"></div>
+      </div>
+
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-4">
+          <div class="text-sm font-medium text-slate-300">Watchlist</div>
+          <button onclick="saveWatchlist()"
+            class="btn-success text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+            <i class="fa-solid fa-floppy-disk"></i> Save
+          </button>
+        </div>
+        <div id="watchlistTags" class="flex flex-wrap gap-2 mb-4"></div>
+        <div class="flex gap-2">
+          <input id="addTickerInput" type="text" placeholder="Add ticker…" maxlength="5"
+            class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500 uppercase"
+            onkeydown="if(event.key==='Enter') addToWatchlist()" />
+          <button onclick="addToWatchlist()"
+            class="btn-primary text-white text-sm px-3 py-2 rounded-lg">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LOGS TAB ── -->
+    <div id="tab-logs" class="hidden">
+      <div class="card">
+        <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
+          <span class="text-sm font-medium text-slate-300 flex items-center gap-2">
+            <i class="fa-solid fa-terminal text-green-400"></i> Analyzer Log
+          </span>
+          <button onclick="loadLogs()"
+            class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+            <i class="fa-solid fa-rotate-right"></i> Reload
+          </button>
+        </div>
+        <div id="logContainer" class="p-4 font-mono text-xs h-[500px] overflow-y-auto space-y-0.5">
+          <div class="text-slate-500">Loading logs…</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ═══ TOAST ═══ -->
+<div class="toast" id="toast">
+  <i id="toastIcon" class="fa-solid fa-circle-check text-green-400"></i>
+  <span id="toastMsg" class="text-sm text-slate-200"></span>
+</div>
+
+<!-- ═══ SCRIPTS ═══ -->
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────
+let portfolioData = null;
+let signalsData   = null;
+let watchlistData = [];
+let signalChart   = null;
+let plChart       = null;
+let countdown     = 60;
+let countdownTimer = null;
+let currentTab    = 'overview';
+
+// ── Init ───────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  refreshAll();
+  startCountdown();
+  loadWatchlist();
+});
+
+// ── Tab Switching ──────────────────────────────────────────
+const tabMeta = {
+  overview:  { title: 'Overview',   sub: 'Portfolio + AI Signals' },
+  portfolio: { title: 'Portfolio',  sub: 'Positions & P&L' },
+  signals:   { title: 'Signals',    sub: 'AI Trading Signals' },
+  watchlist: { title: 'Watchlist',  sub: 'Manage & Analyze Tickers' },
+  logs:      { title: 'Logs',       sub: 'Analyzer Activity' },
+};
+
+function switchTab(tab) {
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.remove('hidden');
+  document.getElementById('nav-' + tab).classList.add('active');
+  currentTab = tab;
+  const meta = tabMeta[tab];
+  document.getElementById('pageTitle').textContent    = meta.title;
+  document.getElementById('pageSubtitle').textContent = meta.sub;
+  if (tab === 'logs')    loadLogs();
+  if (tab === 'signals') renderSignals();
+  closeSidebar();
+}
+
+// ── Sidebar ────────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('show');
+}
+
+// ── Countdown & Auto-refresh ───────────────────────────────
+function startCountdown() {
+  countdown = 60;
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    countdown--;
+    const el = document.getElementById('countdown');
+    if (el) el.textContent = countdown;
+    if (countdown <= 0) refreshAll();
+  }, 1000);
+}
+
+// ── Refresh All ────────────────────────────────────────────
+async function refreshAll() {
+  startCountdown();
+  setRefreshLoading(true);
+  await Promise.all([loadPortfolio(), loadSignals()]);
+  setRefreshLoading(false);
+  const now = new Date().toLocaleTimeString();
+  const el = document.getElementById('lastRefreshSide');
+  if (el) el.textContent = now;
+}
+
+function setRefreshLoading(on) {
+  const btn = document.getElementById('refreshBtn');
+  const icon = btn.querySelector('i');
+  if (on) icon.classList.add('fa-spin');
+  else icon.classList.remove('fa-spin');
+}
+
+// ── Format Helpers ─────────────────────────────────────────
+const fmt = {
+  usd: v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v),
+  pct: v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%',
+  num: v => v.toFixed(2),
+};
+
+function plClass(v) { return v >= 0 ? 'pl-pos' : 'pl-neg'; }
+function plIcon(v)  { return v >= 0 ? 'fa-caret-up' : 'fa-caret-down'; }
+
+// ── Portfolio ──────────────────────────────────────────────
+async function loadPortfolio() {
+  try {
+    const r = await fetch('/api/portfolio');
+    if (!r.ok) throw new Error('Portfolio API error');
+    portfolioData = await r.json();
+    renderPortfolioStats();
+    renderPositionsTable();
+    renderPLChart();
+  } catch (e) {
+    console.error('Portfolio load error:', e);
+    ['statPortfolioVal','statDayPL','statBuyingPower','statPositions'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<span class="text-slate-600 text-sm">Unavailable</span>';
+    });
+  }
+}
+
+function renderPortfolioStats() {
+  const d = portfolioData;
+  if (!d || d.error) return;
+
+  const dayPLPct = d.portfolio_value ? (d.day_pl / d.portfolio_value) : 0;
+  const plCls = d.day_pl >= 0 ? 'text-green-400' : 'text-red-400';
+
+  // Overview stat cards
+  setText('statPortfolioVal', fmt.usd(d.portfolio_value));
+  document.getElementById('statPortfolioVal').className = 'stat-value text-white';
+  setText('statEquity', 'Equity');
+  setText('statDayPL', fmt.usd(d.day_pl));
+  document.getElementById('statDayPL').className = 'stat-value ' + plCls;
+  setText('statDayPLPct', fmt.pct(dayPLPct));
+  document.getElementById('cardDayPL').className = 'card p-4 ' + (d.day_pl >= 0 ? 'card-glow-green' : 'card-glow-red');
+  setText('statBuyingPower', fmt.usd(d.buying_power));
+  setText('statPositions', d.positions.length.toString());
+  setText('statWatchCount', `of ${watchlistData.length || '—'} watched`);
+
+  // Portfolio tab
+  setText('pPortfolioVal', fmt.usd(d.portfolio_value));
+  setText('pDayPL', fmt.usd(d.day_pl));
+  document.getElementById('pDayPL').className = 'text-2xl font-bold ' + plCls;
+  setText('pBuyingPower', fmt.usd(d.buying_power));
+  setText('positionCount', `${d.positions.length} position${d.positions.length !== 1 ? 's' : ''}`);
+}
+
+function renderPositionsTable() {
+  const d = portfolioData;
+  if (!d || d.error || !d.positions) return;
+
+  const tbody    = document.getElementById('positionsBody');
+  const noPos    = document.getElementById('noPositions');
+  const overview = document.getElementById('overviewPositionsTable');
+
+  if (!d.positions.length) {
+    tbody.innerHTML = '';
+    noPos.classList.remove('hidden');
+    overview.innerHTML = '<div class="text-sm text-slate-500 text-center py-4">No open positions</div>';
+    return;
+  }
+  noPos.classList.add('hidden');
+
+  tbody.innerHTML = d.positions.map(p => {
+    const val = p.qty * p.current;
+    return `
+    <tr>
+      <td class="font-semibold text-white mono">${p.symbol}</td>
+      <td class="text-right mono text-slate-300">${p.qty}</td>
+      <td class="text-right mono text-slate-400">${fmt.usd(p.avg_cost)}</td>
+      <td class="text-right mono text-white">${fmt.usd(p.current)}</td>
+      <td class="text-right mono ${plClass(p.pl)} font-medium">
+        <i class="fa-solid ${plIcon(p.pl)} mr-1"></i>${fmt.usd(p.pl)}
+      </td>
+      <td class="text-right mono ${plClass(p.pl_pct)}">${fmt.pct(p.pl_pct)}</td>
+      <td class="text-right mono text-slate-300">${fmt.usd(val)}</td>
+    </tr>`;
+  }).join('');
+
+  overview.innerHTML = `
+    <table class="data-table w-full">
+      <thead><tr>
+        <th class="text-left">Symbol</th>
+        <th class="text-right">Price</th>
+        <th class="text-right">P&L</th>
+        <th class="text-right">P&L %</th>
+      </tr></thead>
+      <tbody>${d.positions.map(p => `
+        <tr>
+          <td class="font-semibold text-white mono">${p.symbol}</td>
+          <td class="text-right mono text-slate-300">${fmt.usd(p.current)}</td>
+          <td class="text-right mono ${plClass(p.pl)} font-medium">${fmt.usd(p.pl)}</td>
+          <td class="text-right mono ${plClass(p.pl_pct)}">${fmt.pct(p.pl_pct)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function renderPLChart() {
+  const d = portfolioData;
+  if (!d || !d.positions || !d.positions.length) return;
+
+  const labels = d.positions.map(p => p.symbol);
+  const values = d.positions.map(p => parseFloat(p.pl.toFixed(2)));
+  const colors = values.map(v => v >= 0 ? '#4ade8099' : '#f8717199');
+  const borders = values.map(v => v >= 0 ? '#4ade80' : '#f87171');
+
+  if (plChart) plChart.destroy();
+  const ctx = document.getElementById('plChart').getContext('2d');
+  plChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'P&L ($)', data: values, backgroundColor: colors, borderColor: borders, borderWidth: 1, borderRadius: 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+        y: { ticks: { color: '#64748b', callback: v => '$' + v }, grid: { color: '#1e293b' } }
+      }
+    }
+  });
+}
+
+// ── Signals ────────────────────────────────────────────────
+async function loadSignals() {
+  try {
+    const r = await fetch('/api/signals');
+    if (!r.ok) throw new Error('No signals');
+    const data = await r.json();
+    signalsData = data.signals || [];
+    const ts = data.generated_at ? new Date(data.generated_at).toLocaleString() : '—';
+
+    setText('signalsTimestamp', ts);
+    setText('signalsMeta', `${signalsData.length} signals · Generated ${ts}`);
+
+    const buy  = signalsData.filter(s => s.signal === 'BUY').length;
+    const sell = signalsData.filter(s => s.signal === 'SELL').length;
+    const hold = signalsData.filter(s => s.signal === 'HOLD').length;
+
+    setText('buyCount',  buy.toString());
+    setText('holdCount', hold.toString());
+    setText('sellCount', sell.toString());
+
+    // Badge on nav
+    const badge = document.getElementById('signalBadge');
+    if (buy + sell > 0) {
+      badge.textContent = (buy + sell).toString();
+      badge.classList.remove('hidden');
+    }
+
+    renderSignalPieChart(buy, sell, hold);
+    renderSignalPreview();
+    if (currentTab === 'signals') renderSignals();
+  } catch (e) {
+    console.error('Signals error:', e);
+    document.getElementById('signalPreviewList').innerHTML =
+      '<div class="text-sm text-slate-500 text-center py-4">No signals yet — run analysis first</div>';
+  }
+}
+
+function renderSignalPieChart(buy, sell, hold) {
+  if (signalChart) signalChart.destroy();
+  const ctx = document.getElementById('signalChart').getContext('2d');
+  const total = buy + sell + hold;
+  if (!total) return;
+  signalChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['BUY', 'SELL', 'HOLD'],
+      datasets: [{ data: [buy, sell, hold], backgroundColor: ['#16a34a99','#dc262699','#ca8a0499'],
+        borderColor: ['#4ade80','#f87171','#facc15'], borderWidth: 1 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '70%',
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)` } } }
+    }
+  });
+}
+
+function renderSignalPreview() {
+  if (!signalsData) return;
+  const top = [...signalsData].sort((a, b) => b.confidence - a.confidence).slice(0, 5);
+  document.getElementById('signalPreviewList').innerHTML = top.length
+    ? top.map(s => `
+      <div class="flex items-center gap-3 py-2 border-b border-slate-800 last:border-0">
+        <span class="mono font-semibold text-sm text-white w-14">${s.ticker}</span>
+        <span class="text-xs px-2 py-0.5 rounded-full font-medium ${badgeClass(s.signal)}">${s.signal}</span>
+        <div class="flex-1 conf-bar"><div class="conf-fill ${confClass(s.confidence)}" style="width:${(s.confidence*100).toFixed(0)}%"></div></div>
+        <span class="text-xs mono text-slate-400">${(s.confidence*100).toFixed(0)}%</span>
+        <span class="text-xs mono text-slate-300">${fmt.usd(s.price)}</span>
+      </div>`).join('')
+    : '<div class="text-sm text-slate-500 text-center py-4">No signals available</div>';
+}
+
+function renderSignals() {
+  if (!signalsData) return;
+  const filter = document.getElementById('signalFilter').value;
+  const list = filter === 'ALL' ? signalsData : signalsData.filter(s => s.signal === filter);
+  const grid = document.getElementById('signalsGrid');
+  if (!list.length) {
+    grid.innerHTML = '<div class="col-span-3 text-center py-12 text-slate-500"><i class="fa-solid fa-inbox text-3xl block mb-2 text-slate-700"></i>No signals match this filter</div>';
+    return;
+  }
+  grid.innerHTML = list.map(s => {
+    const ts = s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : '—';
+    const confPct = (s.confidence * 100).toFixed(0);
+    return `
+    <div class="card p-5 flex flex-col gap-3 hover:scale-[1.01] transition-transform">
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="text-xl font-bold text-white mono">${s.ticker}</div>
+          <div class="text-xs text-slate-500 mono">${fmt.usd(s.price)} · ${ts}</div>
+        </div>
+        <span class="text-sm px-3 py-1 rounded-full font-semibold ${badgeClass(s.signal)}">${s.signal}</span>
+      </div>
+
+      <div>
+        <div class="flex justify-between text-xs text-slate-500 mb-1">
+          <span>Confidence</span><span class="font-medium text-slate-300">${confPct}%</span>
+        </div>
+        <div class="conf-bar"><div class="conf-fill ${confClass(s.confidence)}" style="width:${confPct}%"></div></div>
+      </div>
+
+      <div class="text-xs text-slate-400 leading-relaxed border-t border-slate-800 pt-3">${s.reasoning || 'No reasoning provided.'}</div>
+
+      <div class="grid grid-cols-3 gap-2 text-center border-t border-slate-800 pt-3">
+        <div>
+          <div class="text-xs text-slate-500">Target</div>
+          <div class="text-xs font-medium mono text-green-400">${s.target_price ? fmt.usd(s.target_price) : '—'}</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500">Stop</div>
+          <div class="text-xs font-medium mono text-red-400">${s.stop_loss ? fmt.usd(s.stop_loss) : '—'}</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500">Horizon</div>
+          <div class="text-xs font-medium mono text-slate-300">${s.time_horizon || '—'}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Watchlist ──────────────────────────────────────────────
+async function loadWatchlist() {
+  try {
+    const r = await fetch('/api/watchlist');
+    const d = await r.json();
+    watchlistData = d.tickers || [];
+    renderWatchlistTags();
+  } catch (e) { console.error('Watchlist error:', e); }
+}
+
+function renderWatchlistTags() {
+  document.getElementById('watchlistTags').innerHTML = watchlistData.map(t => `
+    <div class="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5">
+      <span class="text-sm font-medium mono text-white">${t}</span>
+      <button onclick="removeFromWatchlist('${t}')" class="text-slate-500 hover:text-red-400 text-xs ml-1">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>`).join('');
+}
+
+function addToWatchlist() {
+  const input = document.getElementById('addTickerInput');
+  const t = input.value.toUpperCase().trim();
+  if (!t || watchlistData.includes(t)) { input.value = ''; return; }
+  watchlistData.push(t);
+  renderWatchlistTags();
+  input.value = '';
+}
+
+function removeFromWatchlist(ticker) {
+  watchlistData = watchlistData.filter(t => t !== ticker);
+  renderWatchlistTags();
+}
+
+async function saveWatchlist() {
+  try {
+    await fetch('/api/watchlist', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickers: watchlistData }) });
+    showToast('Watchlist saved!', 'success');
+  } catch (e) { showToast('Failed to save watchlist', 'error'); }
+}
+
+async function analyzeTicker() {
+  const input = document.getElementById('tickerInput');
+  const symbol = input.value.toUpperCase().trim();
+  if (!symbol) return;
+  const result = document.getElementById('tickerResult');
+  result.classList.remove('hidden');
+  result.innerHTML = '<div class="flex items-center gap-2 text-sm text-slate-400"><span class="spinner"></span> Analyzing ' + symbol + '…</div>';
+  try {
+    const r = await fetch('/api/ticker/' + symbol);
+    if (!r.ok) throw new Error('Ticker not found');
+    const s = await r.json();
+    result.innerHTML = `
+      <div class="card p-4 border ${s.signal === 'BUY' ? 'border-green-800' : s.signal === 'SELL' ? 'border-red-800' : 'border-amber-800'}">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-white mono text-lg">${s.ticker}</span>
+          <span class="px-3 py-1 rounded-full text-sm font-semibold ${badgeClass(s.signal)}">${s.signal}</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-center mb-3">
+          <div><div class="text-xs text-slate-500">Price</div><div class="mono font-medium">${fmt.usd(s.price)}</div></div>
+          <div><div class="text-xs text-slate-500">Target</div><div class="mono font-medium text-green-400">${s.target_price ? fmt.usd(s.target_price) : '—'}</div></div>
+          <div><div class="text-xs text-slate-500">Stop</div><div class="mono font-medium text-red-400">${s.stop_loss ? fmt.usd(s.stop_loss) : '—'}</div></div>
+        </div>
+        <div class="text-xs text-slate-400 leading-relaxed">${s.reasoning}</div>
+        <div class="mt-2 conf-bar"><div class="conf-fill ${confClass(s.confidence)}" style="width:${(s.confidence*100).toFixed(0)}%"></div></div>
+        <div class="text-xs text-slate-500 mt-1">${(s.confidence*100).toFixed(0)}% confidence</div>
+      </div>`;
+  } catch (e) {
+    result.innerHTML = `<div class="text-sm text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i>Could not analyze ${symbol}</div>`;
+  }
+}
+
+// ── Analysis Trigger ───────────────────────────────────────
+async function triggerAnalysis(execute = false) {
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> <span class="hidden sm:inline">Running…</span>';
+  showToast('Analysis started…', 'info');
+  try {
+    const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dry_run: !execute }) });
+    const d = await r.json();
+    showToast('Analysis running in background!', 'success');
+    setTimeout(() => loadSignals(), 8000);
+  } catch (e) {
+    showToast('Analysis failed to start', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-brain"></i> <span class="hidden sm:inline">Run</span> Analysis';
+  }
+}
+
+// ── Logs ───────────────────────────────────────────────────
+async function loadLogs() {
+  try {
+    const r = await fetch('/api/logs');
+    const d = await r.json();
+    const container = document.getElementById('logContainer');
+    if (!d.lines || !d.lines.length) {
+      container.innerHTML = '<div class="text-slate-500">No log entries yet.</div>';
+      return;
+    }
+    container.innerHTML = d.lines.map(line => {
+      const cls = line.includes('[ERROR]') ? 'log-error' : line.includes('[WARNING]') ? 'log-warn' : 'log-info';
+      return `<div class="log-line ${cls}">${escHtml(line.trim())}</div>`;
+    }).join('');
+    container.scrollTop = container.scrollHeight;
+  } catch (e) {
+    document.getElementById('logContainer').innerHTML = '<div class="text-slate-500">Could not load logs.</div>';
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, type = 'success') {
+  const toast = document.getElementById('toast');
+  const icon  = document.getElementById('toastIcon');
+  const text  = document.getElementById('toastMsg');
+  const icons = { success: 'fa-circle-check text-green-400', error: 'fa-circle-xmark text-red-400', info: 'fa-circle-info text-blue-400' };
+  icon.className = 'fa-solid ' + (icons[type] || icons.success);
+  text.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ── Helpers ────────────────────────────────────────────────
+function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function badgeClass(sig) {
+  return sig === 'BUY' ? 'badge-buy' : sig === 'SELL' ? 'badge-sell' : 'badge-hold';
+}
+function confClass(c) {
+  return c >= 0.75 ? 'conf-high' : c >= 0.55 ? 'conf-med' : 'conf-low';
+}
+</script>
+</body>
+</html>

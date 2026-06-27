@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v1.0.2] - 2026-06-26
+
+### Changed
+- Flask server now runs on port **8080** (updated `app.py` and `.env`)
+- Port is read from `PORT` environment variable with 8080 as default
+
+### Fixed
+- Added `.idea/` to `.gitignore` to prevent PyCharm config from being committed
+
+---
+
 ## [v1.0.1] - 2026-06-25
 
 ### Added

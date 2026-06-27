@@ -7,3 +7,6 @@ __pycache__/
 venv/
 logs/*.log
 .DS_Store
+.idea/
+
+.idea/

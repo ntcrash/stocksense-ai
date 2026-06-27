@@ -1,6 +1,9 @@
 """
 StockSense AI - Flask API Server
 """
+from dotenv import load_dotenv
+load_dotenv()  # Load .env before anything else reads os.getenv()
+
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 import json, os, subprocess, threading
@@ -10,9 +13,11 @@ from backend.analyzer import run_analysis, fetch_stock_data, get_ai_signal, WATC
 app = Flask(__name__, static_folder="frontend", static_url_path="")
 CORS(app)
 
+
 @app.route("/")
 def index():
     return send_from_directory("frontend", "index.html")
+
 
 @app.route("/api/signals")
 def get_signals():
@@ -22,38 +27,68 @@ def get_signals():
     with open(path) as f:
         return jsonify(json.load(f))
 
+
 @app.route("/api/portfolio")
 def get_portfolio():
     try:
         import alpaca_trade_api as tradeapi
-        api = tradeapi.REST(os.getenv("ALPACA_API_KEY"), os.getenv("ALPACA_SECRET_KEY"),
-                            os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets"), api_version="v2")
-        account = api.get_account()
+        api = tradeapi.REST(
+            os.getenv("ALPACA_API_KEY"),
+            os.getenv("ALPACA_SECRET_KEY"),
+            os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets"),
+            api_version="v2"
+        )
+        account   = api.get_account()
         positions = api.list_positions()
         return jsonify({
             "portfolio_value": float(account.portfolio_value),
             "buying_power":    float(account.buying_power),
             "day_pl":          float(account.equity) - float(account.last_equity),
-            "positions": [{"symbol": p.symbol, "qty": float(p.qty), "avg_cost": float(p.avg_entry_price),
-                           "current": float(p.current_price), "pl": float(p.unrealized_pl),
-                           "pl_pct": float(p.unrealized_plpc)} for p in positions]
+            "positions": [
+                {
+                    "symbol":   p.symbol,
+                    "qty":      float(p.qty),
+                    "avg_cost": float(p.avg_entry_price),
+                    "current":  float(p.current_price),
+                    "pl":       float(p.unrealized_pl),
+                    "pl_pct":   float(p.unrealized_plpc),
+                }
+                for p in positions
+            ]
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/analyze", methods=["POST"])
 def trigger_analysis():
     dry_run = request.json.get("dry_run", True) if request.json else True
-    threading.Thread(target=lambda: run_analysis(execute=not dry_run), daemon=True).start()
-    return jsonify({"status": "started", "dry_run": dry_run, "timestamp": datetime.now().isoformat()})
+    threading.Thread(
+        target=lambda: run_analysis(execute=not dry_run), daemon=True
+    ).start()
+    return jsonify({
+        "status":    "started",
+        "dry_run":   dry_run,
+        "timestamp": datetime.now().isoformat()
+    })
+
 
 @app.route("/api/ticker/<symbol>")
 def get_ticker(symbol: str):
+    """
+    Analyze a single ticker on demand.
+    Uses 120 days of history to ensure SMA_50 has enough data points
+    after dropna() removes incomplete indicator rows.
+    """
     symbol = symbol.upper()
-    df = fetch_stock_data(symbol, days=30)
-    if df is None:
-        return jsonify({"error": f"Could not fetch data for {symbol}"}), 404
-    return jsonify(get_ai_signal(symbol, df) or {"error": "AI analysis failed"})
+    df = fetch_stock_data(symbol, days=120)
+    if df is None or df.empty:
+        return jsonify({"error": f"Could not fetch sufficient data for {symbol}. Market may be closed or symbol invalid."}), 404
+    result = get_ai_signal(symbol, df)
+    if result is None:
+        return jsonify({"error": "AI analysis failed — check ANTHROPIC_API_KEY in .env"}), 500
+    return jsonify(result)
+
 
 @app.route("/api/watchlist", methods=["GET", "POST"])
 def manage_watchlist():
@@ -69,6 +104,7 @@ def manage_watchlist():
         json.dump({"tickers": [t.upper() for t in tickers]}, f)
     return jsonify({"saved": True, "tickers": tickers})
 
+
 @app.route("/api/logs")
 def get_logs():
     path = "logs/analyzer.log"
@@ -77,14 +113,24 @@ def get_logs():
     with open(path) as f:
         return jsonify({"lines": f.readlines()[-100:]})
 
+
 @app.route("/api/github/push", methods=["POST"])
 def github_push():
     try:
-        msg = (request.json or {}).get("message", f"Auto-update {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-        result = subprocess.run(["bash", "scripts/git_push.sh", msg], capture_output=True, text=True, timeout=30)
-        return jsonify({"success": result.returncode == 0, "stdout": result.stdout, "stderr": result.stderr})
+        msg    = (request.json or {}).get("message", f"Auto-update {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        result = subprocess.run(
+            ["bash", "scripts/git_push.sh", msg],
+            capture_output=True, text=True, timeout=30
+        )
+        return jsonify({
+            "success": result.returncode == 0,
+            "stdout":  result.stdout,
+            "stderr":  result.stderr
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 if __name__ == "__main__":
-    app.run(debug=True, port=int(os.getenv("PORT", 8080)), host="0.0.0.0")
+    port = int(os.getenv("PORT", 8080))
+    app.run(debug=True, port=port, host="0.0.0.0")

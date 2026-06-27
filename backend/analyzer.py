@@ -39,25 +39,53 @@ def get_alpaca_client():
     return tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL, api_version="v2")
 
 
-def fetch_stock_data(ticker: str, days: int = 60) -> Optional[pd.DataFrame]:
+def fetch_stock_data(ticker: str, days: int = 120) -> Optional[pd.DataFrame]:
+    """
+    Fetch OHLCV data and compute technical indicators.
+    days=120 ensures ~85 trading days — enough for SMA_50 + buffer after dropna().
+    Handles yfinance >= 0.2.38 MultiIndex column format automatically.
+    """
     try:
         end   = datetime.now()
         start = end - timedelta(days=days)
         df    = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+
         if df.empty:
-            log.warning(f"No data for {ticker}")
+            log.warning(f"No data returned for {ticker}")
             return None
-        df["SMA_20"]  = df["Close"].rolling(20).mean()
-        df["SMA_50"]  = df["Close"].rolling(50).mean()
-        df["RSI"]     = _compute_rsi(df["Close"])
+
+        # Fix: yfinance >= 0.2.38 returns MultiIndex columns like ('Close', 'AAPL').
+        # Flatten to single-level so df["Close"] works correctly.
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        # Guard: ensure required columns exist
+        required = {"Close", "High", "Low", "Open", "Volume"}
+        missing  = required - set(df.columns)
+        if missing:
+            log.error(f"Missing columns for {ticker}: {missing}")
+            return None
+
+        df["SMA_20"]     = df["Close"].rolling(20).mean()
+        df["SMA_50"]     = df["Close"].rolling(50).mean()
+        df["RSI"]        = _compute_rsi(df["Close"])
         df["MACD"], df["Signal"] = _compute_macd(df["Close"])
         df["BB_upper"], df["BB_lower"] = _compute_bollinger(df["Close"])
-        df["Volume_MA"] = df["Volume"].rolling(20).mean()
+        df["Volume_MA"]  = df["Volume"].rolling(20).mean()
         df["Pct_Change"] = df["Close"].pct_change()
-        return df.dropna()
+
+        df_clean = df.dropna()
+        if df_clean.empty:
+            log.warning(f"All rows dropped after indicator calculation for {ticker} — insufficient history")
+            return None
+
+        log.info(f"Fetched {len(df_clean)} rows for {ticker}")
+        return df_clean
+
     except Exception as e:
         log.error(f"Error fetching {ticker}: {e}")
         return None
+
 
 def _compute_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     delta  = prices.diff()
@@ -107,12 +135,16 @@ def get_ai_signal(ticker: str, df: pd.DataFrame) -> Optional[dict]:
             max_tokens=400,
             messages=[{"role": "user", "content": build_analysis_prompt(ticker, df)}]
         )
-        data = json.loads(resp.content[0].text.strip())
+        raw  = resp.content[0].text.strip()
+        data = json.loads(raw)
         data["ticker"]    = ticker
         data["price"]     = float(df.iloc[-1]["Close"])
         data["timestamp"] = datetime.now().isoformat()
         log.info(f"Signal for {ticker}: {data['signal']} @ {data['confidence']:.0%}")
         return data
+    except json.JSONDecodeError as e:
+        log.error(f"JSON parse error for {ticker}: {e} | raw: {raw[:200]}")
+        return None
     except Exception as e:
         log.error(f"AI signal error for {ticker}: {e}")
         return None
@@ -130,7 +162,7 @@ def execute_trade(api, signal: dict):
         if action == "BUY":
             try:
                 api.get_position(ticker)
-                return
+                return  # Already holding
             except Exception:
                 pass
             api.submit_order(symbol=ticker, qty=qty, side="buy", type="market", time_in_force="day")
@@ -157,8 +189,8 @@ def run_analysis(execute: bool = True):
     api = get_alpaca_client()
     signals = []
     for ticker in WATCHLIST:
-        df = fetch_stock_data(ticker)
-        if df is not None and len(df) >= 30:
+        df = fetch_stock_data(ticker)  # uses default 120 days
+        if df is not None and len(df) >= 50:
             signal = get_ai_signal(ticker, df)
             if signal:
                 signals.append(signal)

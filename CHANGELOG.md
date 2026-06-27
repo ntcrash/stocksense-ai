@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v1.0.3] - 2026-06-26
+
+### Fixed
+- **Ticker analysis broken** — yfinance >= 0.2.38 returns `MultiIndex` columns (`('Close', 'AAPL')` instead of `'Close'`). Added `df.columns.get_level_values(0)` flatten after every download.
+- **SMA_50 wiping all rows** — `get_ticker` called `fetch_stock_data` with only 30 days (~22 trading days). SMA_50 needs 50+ data points; after `dropna()` zero rows survived. Fixed by using 120 calendar days (~85 trading days) for all fetches.
+- Added missing column guard in `fetch_stock_data` to log and return `None` gracefully if yfinance returns unexpected schema.
+- Improved JSON parse error logging in `get_ai_signal` to capture raw response for debugging.
+
+### Changed
+- All remaining `localhost:5000` references updated to `localhost:8080` in `README.md` and `.env.example`
+- `app.py` now calls `load_dotenv()` at startup so `.env` is always loaded without needing `python-dotenv` to be called externally
+- `run_analysis` minimum row check raised from 30 to 50 to match SMA_50 requirement
+- Default `days` in `fetch_stock_data` raised from 60 to 120 for reliable indicator computation
+
+---
+
 ## [v1.0.2] - 2026-06-26
 
 ### Changed

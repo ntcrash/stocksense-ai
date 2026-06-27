@@ -18,13 +18,13 @@
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # fill in API keys
-python app.py               # dashboard → http://localhost:5000
+python app.py               # dashboard → http://localhost:8080
 python scheduler.py         # auto-trader (9:31 AM + 3:45 PM ET)
 ```
 
 ## Dashboard
 
-Open `http://localhost:5000` after starting the Flask server.
+Open `http://localhost:8080` after starting the Flask server.
 
 | Tab | Description |
 |-----|-------------|

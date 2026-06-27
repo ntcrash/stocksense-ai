@@ -122,13 +122,40 @@ Volume ratio: {float(last['Volume'] / last['Volume_MA']):.2f}x avg
 Recent 10-day data:
 {recent[['Close','RSI','MACD','Pct_Change']].to_string()}
 
-Respond ONLY with valid JSON:
+Respond with ONLY a raw JSON object. No markdown, no code fences, no explanation — just the JSON object itself starting with {{ and ending with }}.
 {{"signal": "BUY"|"SELL"|"HOLD", "confidence": 0.0-1.0, "reasoning": "2-3 sentences",
   "target_price": float, "stop_loss": float, "time_horizon": "1-3 days"|"1 week"|"2+ weeks"}}"""
 
 
+def _extract_json(text: str) -> str:
+    """
+    Strip markdown code fences if the model wraps JSON in ```json ... ```
+    and extract the first valid JSON object found in the response.
+    """
+    text = text.strip()
+    # Remove ```json or ``` fences
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # Drop first line (```json or ```) and last ``` line
+        inner = []
+        for line in lines[1:]:
+            if line.strip() == "```":
+                break
+            inner.append(line)
+        text = "\n".join(inner).strip()
+    # As a last resort, find the first { ... } block
+    start = text.find("{")
+    end   = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end+1]
+    return text
+
+
 def get_ai_signal(ticker: str, df: pd.DataFrame) -> Optional[dict]:
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    # Always read the key fresh from env so runtime .env changes take effect
+    api_key = os.getenv("ANTHROPIC_API_KEY") or ANTHROPIC_API_KEY
+    client  = anthropic.Anthropic(api_key=api_key)
+    raw     = ""
     try:
         resp = client.messages.create(
             model="claude-sonnet-4-6",
@@ -136,14 +163,15 @@ def get_ai_signal(ticker: str, df: pd.DataFrame) -> Optional[dict]:
             messages=[{"role": "user", "content": build_analysis_prompt(ticker, df)}]
         )
         raw  = resp.content[0].text.strip()
-        data = json.loads(raw)
+        clean = _extract_json(raw)
+        data  = json.loads(clean)
         data["ticker"]    = ticker
         data["price"]     = float(df.iloc[-1]["Close"])
         data["timestamp"] = datetime.now().isoformat()
         log.info(f"Signal for {ticker}: {data['signal']} @ {data['confidence']:.0%}")
         return data
     except json.JSONDecodeError as e:
-        log.error(f"JSON parse error for {ticker}: {e} | raw: {raw[:200]}")
+        log.error(f"JSON parse error for {ticker}: {e} | raw: {raw[:300]}")
         return None
     except Exception as e:
         log.error(f"AI signal error for {ticker}: {e}")

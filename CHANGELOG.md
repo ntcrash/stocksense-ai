@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v1.0.5] - 2026-06-26
+
+### Fixed
+- **AI signal always returning None** — Claude API was responding with JSON wrapped in markdown code fences (` ```json`). `json.loads()` raised `JSONDecodeError` on the backticks, the exception was silently caught, and `None` was returned every time. Added `_extract_json()` helper that strips fences and falls back to brace-extraction as a last resort.
+- `get_ai_signal` now reads `ANTHROPIC_API_KEY` fresh from the environment at call time instead of relying solely on the module-level constant captured at import — prevents stale `None` values if `.env` is updated without restarting.
+
+### Changed
+- Analysis prompt now explicitly instructs the model to return raw JSON with no markdown formatting, no code fences, no preamble.
+
+---
+
 ## [v1.0.4] - 2026-06-26
 
 ### Fixed

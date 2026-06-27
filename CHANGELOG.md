@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v1.0.4] - 2026-06-26
+
+### Fixed
+- **Portfolio not loading** — `ALPACA_BASE_URL` in `.env` had a trailing `/v2` suffix. The Alpaca SDK appends its own `/v2` from `api_version="v2"`, resulting in `/v2/v2/account` → 404. Removed trailing `/v2` from both `.env` and `.env.example`.
+- **Ticker analysis returning generic error** — Anthropic API key was returning 401. The `get_ai_signal` function was swallowing the auth error silently and returning `None`, while the frontend showed a static "Could not analyze" string. Now the actual error message propagates from the API response to the UI.
+
+### Changed
+- `/api/ticker/:symbol` now validates `ANTHROPIC_API_KEY` is set before fetching market data, returning a 503 with a descriptive message if missing.
+- Frontend ticker error display now shows the real server error message instead of a hardcoded string.
+
+---
+
 ## [v1.0.3] - 2026-06-26
 
 ### Fixed

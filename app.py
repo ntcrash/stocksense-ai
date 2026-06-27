@@ -81,12 +81,20 @@ def get_ticker(symbol: str):
     after dropna() removes incomplete indicator rows.
     """
     symbol = symbol.upper()
+
+    # Validate Anthropic key is configured before burning time on a data fetch
+    if not os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY") == "your_anthropic_api_key_here":
+        return jsonify({"error": "ANTHROPIC_API_KEY not set in .env — add your key and restart the server"}), 503
+
     df = fetch_stock_data(symbol, days=120)
     if df is None or df.empty:
-        return jsonify({"error": f"Could not fetch sufficient data for {symbol}. Market may be closed or symbol invalid."}), 404
+        return jsonify({"error": f"No data for '{symbol}' — check the symbol is valid and markets are open"}), 404
+
     result = get_ai_signal(symbol, df)
     if result is None:
-        return jsonify({"error": "AI analysis failed — check ANTHROPIC_API_KEY in .env"}), 500
+        return jsonify({
+            "error": "AI signal failed — check ANTHROPIC_API_KEY in .env is correct (got 401 from Anthropic API)"
+        }), 500
     return jsonify(result)
 
 

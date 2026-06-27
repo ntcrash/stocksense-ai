@@ -813,7 +813,10 @@ async function analyzeTicker() {
   result.innerHTML = '<div class="flex items-center gap-2 text-sm text-slate-400"><span class="spinner"></span> Analyzing ' + symbol + '…</div>';
   try {
     const r = await fetch('/api/ticker/' + symbol);
-    if (!r.ok) throw new Error('Ticker not found');
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${r.status}`);
+    }
     const s = await r.json();
     result.innerHTML = `
       <div class="card p-4 border ${s.signal === 'BUY' ? 'border-green-800' : s.signal === 'SELL' ? 'border-red-800' : 'border-amber-800'}">
@@ -831,7 +834,7 @@ async function analyzeTicker() {
         <div class="text-xs text-slate-500 mt-1">${(s.confidence*100).toFixed(0)}% confidence</div>
       </div>`;
   } catch (e) {
-    result.innerHTML = `<div class="text-sm text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i>Could not analyze ${symbol}</div>`;
+    result.innerHTML = `<div class="text-sm text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i>${e.message}</div>`;
   }
 }
 
